@@ -113,7 +113,7 @@ jobs:
       - name: Boot the live ISO under KVM
         run: |
           ./test/arm64-container ./test/arm64-live-boot release/*.iso evidence/live
-          echo "The live system offered a login after $(cut -d= -f2 evidence/live/timing) s." >>"$GITHUB_STEP_SUMMARY"
+          echo "The live system was up after $(cut -d= -f2 evidence/live/timing) s." >>"$GITHUB_STEP_SUMMARY"
 
       # The whole path with nobody at the keyboard: the installer answers from
       # a cidata drive, writes the disk, and the machine restarts into what it
@@ -190,7 +190,7 @@ jobs:
             printf '| --- |'; for d in "${dirs[@]}"; do printf ' ---: |'; done; echo
             row "Result" result
             row "Build the ISO" build
-            row "Live ISO to a login" live
+            row "Live ISO to the installer" live
             row "Install" install
             row "Install, reboot and checks" whole
             row "First boot" boot
