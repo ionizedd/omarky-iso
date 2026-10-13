@@ -181,7 +181,8 @@ jobs:
           }
           result() { [ "$(cat "$1/status" 2>/dev/null)" = success ] && echo "✅ passed" || echo "❌ failed"; }
           install() { jq -r '"\((.finished_at - .started_at) * 10 | round / 10) s"' "$1/install/omarchy-install-timing.json" 2>/dev/null || echo "–"; }
-          boot() { sed -n '1s/.*= *//p' "$1/install/systemd-analyze.txt" 2>/dev/null | grep . || echo "–"; }
+          # Without the firmware's share: in the VM that clock has run since the install began.
+          boot() { sed -nE '1s/.*(\+|in) (.*) \(kernel\) \+ (.*) \(userspace\).*/\2 kernel + \3 userspace/p' "$1/install/systemd-analyze.txt" 2>/dev/null | grep . || echo "–"; }
           {
             echo "$marker"
             echo "### aarch64 install test"
