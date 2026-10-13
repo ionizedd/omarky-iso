@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   install:
+    name: "x86_64: build the ISO, install it unattended, boot the result"
     # Our own branches run on Namespace. A pull request from a fork stays on
     # GitHub's runner: it is somebody else's code, and it has no business on
     # our account's machines. No cache volume either way: what one pull
