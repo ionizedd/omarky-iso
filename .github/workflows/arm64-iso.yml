@@ -7,6 +7,7 @@ name: ARM64 ISO
 # The push trigger exists while this lives on a branch: a manual run needs the
 # workflow on the default branch first.
 on:
+  pull_request:
   push:
     branches: [arm64-generic]
   workflow_dispatch:
@@ -20,9 +21,15 @@ concurrency:
 
 jobs:
   build:
-    name: Build the generic ISO
+    name: Build the ISO on ${{ matrix.kernel }}
+    # These runners are ours: a pull request from a fork does not get them.
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: namespace-profile-linux-arm64-16x32
     timeout-minutes: 120
+    strategy: &kernels
+      fail-fast: false
+      matrix:
+        kernel: [linux-aarch64, linux-omarchy-n1x]
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
@@ -65,10 +72,20 @@ jobs:
           path: src/omarchy-pkgs
           persist-credentials: false
 
+      # No channel serves linux-omarchy-n1x yet. omarchy-pkgs' CI has built it,
+      # with the packages that go with it, so the build takes those builds.
+      - name: Packages of the n1x branch that are not published yet
+        if: matrix.kernel != 'linux-aarch64'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./test/arm64-n1x-bundle src/omarchy-pkgs "$RUNNER_TEMP/bundle"
+
       - name: Build the ISO
         run: |
           start=$(date +%s)
-          ./bin/omarchy-iso-make --arch aarch64 --no-boot-offer \
+          kernel=()
+          [[ ${{ matrix.kernel }} == linux-aarch64 ]] || kernel=(--kernel ${{ matrix.kernel }} --package-dir "$RUNNER_TEMP/bundle")
+          ./bin/omarchy-iso-make --arch aarch64 --no-boot-offer "${kernel[@]}" \
             --local-source src/omarchy src/omarchy-pkgs
           echo "Built in $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -80,8 +97,8 @@ jobs:
           (cd release && sha256sum "$(basename "$iso")" | tee "$(basename "$iso").sha256")
           bsdtar -tvf "$iso" >listing.txt
           # What the firmware starts, what GRUB loads and what the installer installs from.
-          for want in EFI/BOOT/BOOTAA64.EFI arch/boot/aarch64/vmlinuz-linux-aarch64 \
-            arch/boot/aarch64/initramfs-linux-aarch64.img arch/aarch64/airootfs.sfs; do
+          for want in EFI/BOOT/BOOTAA64.EFI arch/boot/aarch64/vmlinuz-${{ matrix.kernel }} \
+            arch/boot/aarch64/initramfs-${{ matrix.kernel }}.img arch/aarch64/airootfs.sfs; do
             grep -Eiq " $want\$" listing.txt || { echo "::error::$iso has no $want"; exit 1; }
           done
           {
@@ -103,13 +120,13 @@ jobs:
           iso=$(ls ./*.iso); iso=${iso#./}
           printf '%s\n' "$iso" >NAME
           for f in NAME "$iso" "$iso.sha256"; do
-            nsc artifact upload "$f" "arm64-iso/${{ github.run_id }}/$f" --expires_in 48h
+            nsc artifact upload "$f" "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/$f" --expires_in 48h
           done
           rm NAME
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: omarchy-arm64-generic-${{ github.run_number }}
+          name: omarchy-arm64-${{ matrix.kernel }}-${{ github.run_number }}
           path: |
             release/*.iso
             release/*.sha256
@@ -120,10 +137,12 @@ jobs:
   # The image through its own boot path: firmware, GRUB, the live kernel and
   # initramfs, the live root. Apple-backed runners are the ARM ones with KVM.
   boot:
-    name: Boot the live ISO under KVM
+    name: Boot the live ISO on ${{ matrix.kernel }} under KVM
     needs: build
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: namespace-profile-arm64-linux-apple-12x32
     timeout-minutes: 40
+    strategy: *kernels
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
@@ -137,41 +156,35 @@ jobs:
           ls -l /dev/kvm
           [[ -r /dev/kvm && -w /dev/kvm ]] || sudo chmod 666 /dev/kvm
 
-      - name: QEMU and firmware
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-arm qemu-efi-aarch64 >/dev/null
-          qemu-system-aarch64 --version | head -1
-
       - name: ISO from Namespace's artifact store
         id: fast
         continue-on-error: true
         run: |
           command -v nsc >/dev/null || { curl -fsSL https://get.namespace.so/cloud/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; }
           mkdir -p iso && cd iso
-          nsc artifact download "arm64-iso/${{ github.run_id }}/NAME" NAME
+          nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/NAME" NAME
           iso=$(cat NAME)
-          time nsc artifact download "arm64-iso/${{ github.run_id }}/$iso" "$iso"
-          nsc artifact download "arm64-iso/${{ github.run_id }}/$iso.sha256" "$iso.sha256"
+          time nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/$iso" "$iso"
+          nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/$iso.sha256" "$iso.sha256"
           rm NAME
 
       - name: ISO from GitHub's artifact store (fallback, slow)
         if: steps.fast.outcome != 'success'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: omarchy-arm64-generic-${{ github.run_number }}
+          name: omarchy-arm64-${{ matrix.kernel }}-${{ github.run_number }}
           path: iso
 
       - name: Boot it
         run: |
           (cd iso && sha256sum -c ./*.sha256)
-          ./test/arm64-live-boot iso/*.iso evidence
+          ./test/arm64-container ./test/arm64-live-boot iso/*.iso evidence
           echo "The live system offered a login after $(cut -d= -f2 evidence/timing) s." >>"$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: arm64-live-boot-${{ github.run_number }}
+          name: arm64-live-boot-${{ matrix.kernel }}-${{ github.run_number }}
           path: evidence
           retention-days: 7
           if-no-files-found: warn
@@ -179,10 +192,12 @@ jobs:
   # The whole path with nobody at the keyboard: the installer answers from a
   # cidata drive, writes the disk, and the machine restarts into what it wrote.
   install:
-    name: Install it unattended and boot the result
+    name: Install ${{ matrix.kernel }} unattended and boot the result
     needs: build
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
     runs-on: namespace-profile-arm64-linux-apple-12x32
     timeout-minutes: 60
+    strategy: *kernels
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
@@ -196,36 +211,29 @@ jobs:
           ls -l /dev/kvm
           [[ -r /dev/kvm && -w /dev/kvm ]] || sudo chmod 666 /dev/kvm
 
-      - name: QEMU and firmware
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-arm qemu-efi-aarch64 qemu-utils \
-            mtools dosfstools jq openssl openssh-client tesseract-ocr >/dev/null
-          qemu-system-aarch64 --version | head -1
-
       - name: ISO from Namespace's artifact store
         id: fast
         continue-on-error: true
         run: |
           command -v nsc >/dev/null || { curl -fsSL https://get.namespace.so/cloud/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; }
           mkdir -p iso && cd iso
-          nsc artifact download "arm64-iso/${{ github.run_id }}/NAME" NAME
+          nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/NAME" NAME
           iso=$(cat NAME)
-          time nsc artifact download "arm64-iso/${{ github.run_id }}/$iso" "$iso"
-          nsc artifact download "arm64-iso/${{ github.run_id }}/$iso.sha256" "$iso.sha256"
+          time nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/$iso" "$iso"
+          nsc artifact download "arm64-iso/${{ github.run_id }}/${{ matrix.kernel }}/$iso.sha256" "$iso.sha256"
           rm NAME
 
       - name: ISO from GitHub's artifact store (fallback, slow)
         if: steps.fast.outcome != 'success'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: omarchy-arm64-generic-${{ github.run_number }}
+          name: omarchy-arm64-${{ matrix.kernel }}-${{ github.run_number }}
           path: iso
 
       - name: Install, reboot, check
         run: |
           (cd iso && sha256sum -c ./*.sha256)
-          ./test/arm64-install iso/*.iso evidence
+          KERNEL=${{ matrix.kernel }} ./test/arm64-container ./test/arm64-install iso/*.iso evidence
           {
             echo "Installed, rebooted and checked in $(cut -d= -f2 evidence/timing) s."
             echo
@@ -237,7 +245,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: arm64-install-${{ github.run_number }}
+          name: arm64-install-${{ matrix.kernel }}-${{ github.run_number }}
           path: evidence
           retention-days: 7
           if-no-files-found: warn
