@@ -185,3 +185,41 @@ jobs:
             test-runs/*/runs/**/*.log
           if-no-files-found: ignore
           retention-days: 14
+
+  # THROWAWAY, not for merging: the comment is written by "Install test
+  # comment", which GitHub runs from the default branch, so this branch's
+  # version of it cannot show here. This job runs the same script on this run.
+  comment-preview:
+    name: "Throwaway: show this branch's comment on the pull request"
+    needs: install
+    if: always() && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-26.04
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          set -euo pipefail
+          gh run download "${{ github.run_id }}" -R "$REPO" -p "install-test-${{ github.run_id }}-${{ github.run_attempt }}*" -D "$RUNNER_TEMP/pr" || true
+          base=$(gh run list -R "$REPO" --workflow install-test.yml --branch quattro --event push \
+            --status success -L 1 --json databaseId -q '.[0].databaseId')
+          gh run download "$base" -R "$REPO" -p "install-test-$base-*" -D "$RUNNER_TEMP/base" || true
+          ./test/install-test-comment "$RUNNER_TEMP/pr" "$RUNNER_TEMP/base" "${{ needs.install.result }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "$HEAD_SHA" >"$RUNNER_TEMP/comment.md"
+          existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            -q '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- omarchy-install-test -->"))) | .id' | head -1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F body=@"$RUNNER_TEMP/comment.md" >/dev/null
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -F body=@"$RUNNER_TEMP/comment.md" >/dev/null
+          fi
+          cat "$RUNNER_TEMP/comment.md"
