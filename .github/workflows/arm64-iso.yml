@@ -129,9 +129,13 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
-      - name: Record how it ended
+      # The tests ran as root in their container, and QEMU writes its
+      # screenshots readable by their owner only.
+      - name: Record how it ended, and hand the evidence to the runner's user
         if: always()
-        run: mkdir -p evidence && echo "${{ job.status }}" >evidence/status
+        run: |
+          mkdir -p evidence && sudo chown -R "$(id -u):$(id -g)" evidence
+          echo "${{ job.status }}" >evidence/status
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
