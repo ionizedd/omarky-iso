@@ -1,8 +1,8 @@
 name: ARM64 ISO
 
-# Builds the aarch64 ISO natively, boots it live under KVM, installs it
-# unattended and boots what it installed: once on Arch Linux ARM's kernel, the
-# one image for every board that kernel runs, and once on linux-omarchy-n1x.
+# Builds the aarch64 ISO natively on linux-omarchy-n1x, the one kernel for
+# every aarch64 board, boots it live under KVM, installs it unattended and
+# boots what it installed.
 # One runner does all of it, as the x86_64 install test does: the Apple-backed
 # ones run Linux on Apple Silicon, and are the ARM runners with KVM.
 #
@@ -23,15 +23,13 @@ concurrency:
 
 jobs:
   aarch64:
-    name: "aarch64 on ${{ matrix.kernel }}: build the ISO, boot it live, install it unattended, boot the result"
+    name: "aarch64: build the ISO, boot it live, install it unattended, boot the result"
     # These runners are ours: a pull request from a fork does not get them.
     if: ${{ !github.event.pull_request.head.repo.fork }}
     runs-on: namespace-profile-arm64-linux-apple-12x32
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        kernel: [linux-aarch64, linux-omarchy-n1x]
+    env:
+      KERNEL: linux-omarchy-n1x
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
@@ -78,7 +76,6 @@ jobs:
       # No channel serves linux-omarchy-n1x yet. omarchy-pkgs' CI has built it,
       # with the packages that go with it, so the build takes those builds.
       - name: Packages of the n1x branch that are not published yet
-        if: matrix.kernel != 'linux-aarch64'
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./test/arm64-n1x-bundle src/omarchy-pkgs "$RUNNER_TEMP/bundle"
@@ -86,9 +83,7 @@ jobs:
       - name: Build the ISO
         run: |
           start=$(date +%s)
-          kernel=()
-          [[ ${{ matrix.kernel }} == linux-aarch64 ]] || kernel=(--kernel ${{ matrix.kernel }} --package-dir "$RUNNER_TEMP/bundle")
-          ./bin/omarchy-iso-make --arch aarch64 --no-boot-offer "${kernel[@]}" \
+          ./bin/omarchy-iso-make --arch aarch64 --no-boot-offer --kernel "$KERNEL" --package-dir "$RUNNER_TEMP/bundle" \
             --local-source src/omarchy src/omarchy-pkgs
           echo "Built in $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
           mkdir -p evidence && echo "build_seconds=$(( $(date +%s) - start ))" >evidence/build-timing
@@ -101,8 +96,8 @@ jobs:
           (cd release && sha256sum "$(basename "$iso")" | tee "$(basename "$iso").sha256")
           bsdtar -tvf "$iso" >listing.txt
           # What the firmware starts, what GRUB loads and what the installer installs from.
-          for want in EFI/BOOT/BOOTAA64.EFI arch/boot/aarch64/vmlinuz-${{ matrix.kernel }} \
-            arch/boot/aarch64/initramfs-${{ matrix.kernel }}.img arch/aarch64/airootfs.sfs; do
+          for want in EFI/BOOT/BOOTAA64.EFI "arch/boot/aarch64/vmlinuz-$KERNEL" \
+            "arch/boot/aarch64/initramfs-$KERNEL.img" arch/aarch64/airootfs.sfs; do
             grep -Eiq " $want\$" listing.txt || { echo "::error::$iso has no $want"; exit 1; }
           done
           {
@@ -125,7 +120,7 @@ jobs:
       # wrote.
       - name: Install unattended, reboot, check
         run: |
-          KERNEL=${{ matrix.kernel }} ./test/arm64-container ./test/arm64-install release/*.iso evidence/install
+          ./test/arm64-container ./test/arm64-install release/*.iso evidence/install
           {
             echo "Installed, rebooted and checked in $(cut -d= -f2 evidence/install/timing) s."
             echo
@@ -141,13 +136,13 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: aarch64-${{ matrix.kernel }}-evidence-${{ github.run_number }}
+          name: aarch64-${{ env.KERNEL }}-evidence-${{ github.run_number }}
           path: evidence
           retention-days: 7
           if-no-files-found: warn
 
-  # One comment on the pull request with the timings of every kernel, updated
-  # in place by later runs, like the x86_64 install test's.
+  # One comment on the pull request with the timings, updated in place by later
+  # runs, like the x86_64 install test's.
   comment:
     name: "aarch64: post the timings on the pull request"
     needs: aarch64
