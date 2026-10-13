@@ -91,6 +91,7 @@ jobs:
           ./bin/omarchy-iso-make --arch aarch64 --no-boot-offer "${kernel[@]}" \
             --local-source src/omarchy src/omarchy-pkgs
           echo "Built in $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p evidence && echo "build_seconds=$(( $(date +%s) - start ))" >evidence/build-timing
 
       - name: Inspect the ISO
         run: |
@@ -133,6 +134,10 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
+      - name: Record how it ended
+        if: always()
+        run: mkdir -p evidence && echo "${{ job.status }}" >evidence/status
+
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -140,3 +145,68 @@ jobs:
           path: evidence
           retention-days: 7
           if-no-files-found: warn
+
+  # One comment on the pull request with the timings of every kernel, updated
+  # in place by later runs, like the x86_64 install test's.
+  comment:
+    name: "aarch64: post the timings on the pull request"
+    needs: aarch64
+    if: ${{ always() && github.event_name == 'pull_request' && needs.aarch64.result != 'skipped' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: aarch64-*-evidence-${{ github.run_number }}
+          path: evidence
+
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- omarchy-aarch64-install-test -->'
+          dirs=(evidence/aarch64-*-evidence-*)
+          kernel() { local k=${1#evidence/aarch64-}; echo "${k%-evidence-*}"; }
+          seconds() { local v; v=$(cut -d= -f2 "$1" 2>/dev/null) && [ -n "$v" ] && echo "$v s" || echo "–"; }
+          build() { seconds "$1/build-timing"; }
+          live() { seconds "$1/live/timing"; }
+          whole() { seconds "$1/install/timing"; }
+          row() { # label, then a command that prints one cell for an evidence folder
+            local label=$1 d; shift
+            printf '| %s |' "$label"; for d in "${dirs[@]}"; do printf ' %s |' "$("$@" "$d")"; done; echo
+          }
+          result() { [ "$(cat "$1/status" 2>/dev/null)" = success ] && echo "✅ passed" || echo "❌ failed"; }
+          install() { jq -r '"\((.finished_at - .started_at) * 10 | round / 10) s"' "$1/install/omarchy-install-timing.json" 2>/dev/null || echo "–"; }
+          boot() { sed -n '1s/.*= *//p' "$1/install/systemd-analyze.txt" 2>/dev/null | grep . || echo "–"; }
+          {
+            echo "$marker"
+            echo "### aarch64 install test"
+            echo
+            printf '| |'; for d in "${dirs[@]}"; do printf ' `%s` |' "$(kernel "$d")"; done; echo
+            printf '| --- |'; for d in "${dirs[@]}"; do printf ' ---: |'; done; echo
+            row "Result" result
+            row "Build the ISO" build
+            row "Live ISO to a login" live
+            row "Install" install
+            row "Install, reboot and checks" whole
+            row "First boot" boot
+            for d in "${dirs[@]}"; do
+              grep -q '^not ok' "$d/install/checks" 2>/dev/null || continue
+              echo; echo "Failed on \`$(kernel "$d")\`:"; echo; grep '^not ok' "$d/install/checks" | sed 's/^not ok - /- /'
+            done
+            echo
+            echo "[Run](${{ github.server_url }}/$REPO/actions/runs/${{ github.run_id }}) · ${HEAD_SHA:0:8}"
+          } >comment.md
+          cat comment.md
+          existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            -q ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F body=@comment.md >/dev/null
+          else
+            gh api "repos/$REPO/issues/$PR/comments" -F body=@comment.md >/dev/null
+          fi

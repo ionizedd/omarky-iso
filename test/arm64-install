@@ -180,6 +180,9 @@ check() { # description, then a command run in the guest that must succeed
 } | tee "$out/checks"
 failures=$(grep -c '^not ok' "$out/checks" || true)
 guest 'uname -r; cat /proc/cmdline; systemctl --failed --no-legend; grep -E "^Server" /etc/pacman.d/mirrorlist' >"$out/facts" 2>&1 || true
+# The timings the x86_64 test reports: the installer's own, and this boot's.
+guest "echo $GUEST_PASSWORD | sudo -S -p '' cat /var/log/omarchy-install-timing.json" >"$out/omarchy-install-timing.json" 2>/dev/null || true
+guest 'systemd-analyze' >"$out/systemd-analyze.txt" 2>/dev/null || true
 ssh -i "$SSH_KEY" -p "$port" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
   -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$GUEST_USER@127.0.0.1" "sudo -S -p '' cat /var/log/omarchy-install.log" \
   <<<"$GUEST_PASSWORD" >"$out/omarchy-install.log" 2>/dev/null || true
