@@ -35,18 +35,18 @@ if [[ -f /usr/share/omarchy-iso/install-debug ]]; then
   export OMARCHY_INSTALL_DEBUG=1
 fi
 
-# Tokyo Night palette so the live VT matches the installed look.
-set_tokyo_night_colors() {
-  echo -en "\e]P01a1b26"; echo -en "\e]P1f7768e"; echo -en "\e]P29ece6a"
-  echo -en "\e]P3e0af68"; echo -en "\e]P47aa2f7"; echo -en "\e]P5bb9af7"
-  echo -en "\e]P67dcfff"; echo -en "\e]P7a9b1d6"; echo -en "\e]P8414868"
-  echo -en "\e]P9f7768e"; echo -en "\e]PA9ece6a"; echo -en "\e]PBe0af68"
-  echo -en "\e]PC7aa2f7"; echo -en "\e]PDbb9af7"; echo -en "\e]PE7dcfff"
-  echo -en "\e]PFc0caf5"
+# Morganite palette (Omarky's default theme) so the live VT matches the installed look.
+set_morganite_colors() {
+  echo -en "\e]P00f0c10"; echo -en "\e]P1ec6f8e"; echo -en "\e]P278d6a0"
+  echo -en "\e]P3f3c79a"; echo -en "\e]P4f08fbd"; echo -en "\e]P5d68ee8"
+  echo -en "\e]P69ad8d2"; echo -en "\e]P7bcacb6"; echo -en "\e]P84d3f49"
+  echo -en "\e]P9ff8fab"; echo -en "\e]PA9eebbd"; echo -en "\e]PBffdcb5"
+  echo -en "\e]PCffb3d6"; echo -en "\e]PDeab0f6"; echo -en "\e]PEbdeee9"
+  echo -en "\e]PFede5eb"
   echo -en "\033[0m"
   clear
 }
-set_tokyo_night_colors
+set_morganite_colors
 
 mkdir -p /var/log
 touch "$OMARCHY_INSTALL_LOG_FILE"
