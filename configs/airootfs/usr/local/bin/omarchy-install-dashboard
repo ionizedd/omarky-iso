@@ -332,8 +332,9 @@ render_logo() {
 
 # The icon uses half-block glyphs, scaled to the terminal's actual cell aspect
 # ratio so its square silhouette stays square. No graphics protocol is needed.
-# Coordinates follow the 15 x 15 grid of Omarchy's icon.svg. Each segment
-# paints the full stroke width, starting at the bottom middle of the outer ring.
+# Coordinates follow the 15 x 15 grid of Omarky's cell mark (icon.png in the
+# runtime repo). Each segment paints one grid cell of the membrane, starting at
+# the bottom middle of the ring.
 ICON_WIDTH=30
 ICON_HEIGHT=15
 CELL_WIDTH=8
@@ -386,45 +387,116 @@ icon_pixel() {
 build_icon() {
   local scale="$1" x y row
   local -a mask=(
-    111111111111111
-    100000010000001
-    101111110001101
-    101000000000101
-    101000000000101
-    101000000000101
-    101000000000101
-    111000000000101
-    101000000000101
-    101000000000101
-    101000000000101
-    101000000000101
-    101111111111101
-    100000010000001
-    111111110111111
+    000001111100000
+    000111111111000
+    001111000111100
+    011100000001110
+    011011100000110
+    111011100000111
+    110011100000011
+    110000000000011
+    110000000000011
+    111000000010111
+    011000000000110
+    011100000001110
+    001111000111100
+    000111111111000
+    000001111100000
   )
   ICON_WIDTH=$(( (15 * scale * CELL_HEIGHT + CELL_WIDTH) / (2 * CELL_WIDTH) ))
   ICON_HEIGHT=$(((15 * scale + 1) / 2))
   ICON_ORDER=() ICON_TRACE=() ICON_FILL=()
   ICON_DRAWN=0
-  # Start at the bottom middle, follow the outer left edge to the top cross,
-  # then descend into the inner shape. Fill its two bridges as we reach them.
-  icon_segment "$scale" 7 14 0 14
-  icon_segment "$scale" 0 14 0 0
-  icon_segment "$scale" 0 0 7 0
-  icon_segment "$scale" 7 0 7 2
-  icon_segment "$scale" 7 2 2 2
-  icon_segment "$scale" 2 2 2 7
-  icon_segment "$scale" 2 7 0 7
-  icon_segment "$scale" 2 7 2 12
-  icon_segment "$scale" 2 12 7 12
-  icon_segment "$scale" 7 12 7 14
-  icon_segment "$scale" 7 12 12 12
-  icon_segment "$scale" 12 12 12 2
-  icon_segment "$scale" 12 2 11 2
-  # Finish from the top cross: right along the outside, down, then left.
-  icon_segment "$scale" 7 0 14 0
-  icon_segment "$scale" 14 0 14 14
-  icon_segment "$scale" 14 14 9 14
+  # Trace the membrane clockwise from the bottom middle (leftwards first), one
+  # cell at a time; the nucleus and organelle fill in when the install finishes.
+  icon_segment "$scale" 7 13 7 13
+  icon_segment "$scale" 7 14 7 14
+  icon_segment "$scale" 6 14 6 14
+  icon_segment "$scale" 6 13 6 13
+  icon_segment "$scale" 5 14 5 14
+  icon_segment "$scale" 5 13 5 13
+  icon_segment "$scale" 5 12 5 12
+  icon_segment "$scale" 4 13 4 13
+  icon_segment "$scale" 4 12 4 12
+  icon_segment "$scale" 3 13 3 13
+  icon_segment "$scale" 3 12 3 12
+  icon_segment "$scale" 3 11 3 11
+  icon_segment "$scale" 2 12 2 12
+  icon_segment "$scale" 2 11 2 11
+  icon_segment "$scale" 1 11 1 11
+  icon_segment "$scale" 2 10 2 10
+  icon_segment "$scale" 1 10 1 10
+  icon_segment "$scale" 2 9 2 9
+  icon_segment "$scale" 1 9 1 9
+  icon_segment "$scale" 0 9 0 9
+  icon_segment "$scale" 1 8 1 8
+  icon_segment "$scale" 0 8 0 8
+  icon_segment "$scale" 1 7 1 7
+  icon_segment "$scale" 0 7 0 7
+  icon_segment "$scale" 0 6 0 6
+  icon_segment "$scale" 1 6 1 6
+  icon_segment "$scale" 0 5 0 5
+  icon_segment "$scale" 1 5 1 5
+  icon_segment "$scale" 2 5 2 5
+  icon_segment "$scale" 1 4 1 4
+  icon_segment "$scale" 2 4 2 4
+  icon_segment "$scale" 1 3 1 3
+  icon_segment "$scale" 2 3 2 3
+  icon_segment "$scale" 3 3 3 3
+  icon_segment "$scale" 2 2 2 2
+  icon_segment "$scale" 3 2 3 2
+  icon_segment "$scale" 3 1 3 1
+  icon_segment "$scale" 4 2 4 2
+  icon_segment "$scale" 4 1 4 1
+  icon_segment "$scale" 5 2 5 2
+  icon_segment "$scale" 5 1 5 1
+  icon_segment "$scale" 5 0 5 0
+  icon_segment "$scale" 6 1 6 1
+  icon_segment "$scale" 6 0 6 0
+  icon_segment "$scale" 7 1 7 1
+  icon_segment "$scale" 7 0 7 0
+  icon_segment "$scale" 8 0 8 0
+  icon_segment "$scale" 8 1 8 1
+  icon_segment "$scale" 9 0 9 0
+  icon_segment "$scale" 9 1 9 1
+  icon_segment "$scale" 9 2 9 2
+  icon_segment "$scale" 10 1 10 1
+  icon_segment "$scale" 10 2 10 2
+  icon_segment "$scale" 11 1 11 1
+  icon_segment "$scale" 11 2 11 2
+  icon_segment "$scale" 11 3 11 3
+  icon_segment "$scale" 12 2 12 2
+  icon_segment "$scale" 12 3 12 3
+  icon_segment "$scale" 13 3 13 3
+  icon_segment "$scale" 12 4 12 4
+  icon_segment "$scale" 13 4 13 4
+  icon_segment "$scale" 12 5 12 5
+  icon_segment "$scale" 13 5 13 5
+  icon_segment "$scale" 14 5 14 5
+  icon_segment "$scale" 13 6 13 6
+  icon_segment "$scale" 14 6 14 6
+  icon_segment "$scale" 13 7 13 7
+  icon_segment "$scale" 14 7 14 7
+  icon_segment "$scale" 14 8 14 8
+  icon_segment "$scale" 13 8 13 8
+  icon_segment "$scale" 14 9 14 9
+  icon_segment "$scale" 13 9 13 9
+  icon_segment "$scale" 12 9 12 9
+  icon_segment "$scale" 13 10 13 10
+  icon_segment "$scale" 12 10 12 10
+  icon_segment "$scale" 13 11 13 11
+  icon_segment "$scale" 12 11 12 11
+  icon_segment "$scale" 11 11 11 11
+  icon_segment "$scale" 12 12 12 12
+  icon_segment "$scale" 11 12 11 12
+  icon_segment "$scale" 11 13 11 13
+  icon_segment "$scale" 10 12 10 12
+  icon_segment "$scale" 10 13 10 13
+  icon_segment "$scale" 9 12 9 12
+  icon_segment "$scale" 9 13 9 13
+  icon_segment "$scale" 9 14 9 14
+  icon_segment "$scale" 8 13 8 13
+  icon_segment "$scale" 8 14 8 14
   ICON_STEPS=${#ICON_ORDER[@]}
   for ((y=0; y<15 * scale; y++)); do
     row=${mask[y / scale]}
