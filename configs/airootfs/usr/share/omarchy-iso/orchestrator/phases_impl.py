@@ -1442,8 +1442,8 @@ def finalize_limine_boot(ctx: InstallContext) -> None:
         check=False,
         capture_output=True,
     )
-    if "Omarky" not in limine_conf.read_text():
-        raise RuntimeError(f"{limine_conf} has no Omarky entry")
+    if "Omarchy" not in limine_conf.read_text():
+        raise RuntimeError(f"{limine_conf} has no Omarchy entry")
     if "cryptdevice=" in cmdline and "cryptdevice=" not in limine_conf.read_text():
         raise RuntimeError(f"encrypted install but {limine_conf} has no cryptdevice=")
 
@@ -1799,8 +1799,8 @@ def validate_boot(ctx: InstallContext) -> None:
     if not limine_conf.exists():
         raise RuntimeError(f"{limine_conf} missing")
     limine_conf_text = limine_conf.read_text()
-    if "Omarky" not in limine_conf_text:
-        raise RuntimeError(f"{limine_conf} has no Omarky entry")
+    if "Omarchy" not in limine_conf_text:
+        raise RuntimeError(f"{limine_conf} has no Omarchy entry")
 
     if ctx.encrypt and "cryptdevice=" not in limine_conf_text:
         raise RuntimeError(f"Encrypted install but {limine_conf} has no cryptdevice=")

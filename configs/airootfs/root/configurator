@@ -1039,7 +1039,8 @@ replace_partition_form() {
   done < <(lsblk -Jbpo NAME,PARTN,SIZE,FSTYPE,LABEL,PARTTYPENAME,MOUNTPOINTS "$disk" 2>/dev/null |
     jq -r '.blockdevices[].children[]? | select(.partn != null) |
       [.name, .partn, .size, (.fstype // ""), (.label // ""), (.parttypename // ""),
-       ((.mountpoints // []) | map(select(. != null)) | join(","))] | join("|")')
+       (if (.children // [] | length) > 0 then "in-use"   # open LUKS/LVM holder: never offer it
+        else ((.mountpoints // []) | map(select(. != null)) | join(",")) end)] | join("|")')
 
   step "Replace one partition on $disk"
   if (( ${#options[@]} == 0 )); then
