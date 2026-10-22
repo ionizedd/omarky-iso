@@ -97,7 +97,7 @@ clear_logo() {
 
 # Vertically-centered welcome shown once before the keyboard step — the same
 # frame the deferred-provisioning first boot opens on, so install and first boot
-# bookend the setup identically. Logo, the Omarchy tagline, and a single button,
+# bookend the setup identically. Logo, the Omarky tagline, and a single button,
 # centered like the boot logo. No animation.
 greeter() {
   measure_terminal
@@ -554,13 +554,13 @@ print_dry_run_files() {
   rm -f user_configuration.json user_credentials.json user_full_name.txt user_email_address.txt user_encrypt_installation.txt
 }
 
-# Shared error screen for every "can't fit Omarchy here" outcome of the
+# Shared error screen for every "can't fit Omarky here" outcome of the
 # partition install. Offers the partition tool as the meaningful second
 # action so users have a way to actually fix the situation.
 not_enough_space() {
   local available="${1:-0}"
   step "Not enough free space on $disk"
-  say --foreground 1 "$disk has $(to_gb $available) of usable free space; Omarchy needs at least 32GB."
+  say --foreground 1 "$disk has $(to_gb $available) of usable free space; Omarky needs at least 32GB."
   say "Open the partition tool to free at least 32GB on $disk, then try again."
   echo
   if ! gum confirm --affirmative "Back" --negative "Open partition tool" "Return to installation mode?"; then
@@ -583,18 +583,18 @@ run_partition_decide() {
     abort "Aborted: BitLocker is enabled on this disk."
   fi
 
-  # Omarchy always creates its own dedicated ESP in free space and never
+  # Omarky always creates its own dedicated ESP in free space and never
   # adopts an existing (Windows) ESP. Sharing the Windows ESP is fragile:
   # Windows Update/repair can reclaim or reformat it, the typical 100-260MiB
   # Windows ESP is far too small for our Unified Kernel Images, and a shared
   # ESP forces the install unencrypted. A separate Linux ESP keeps Windows
-  # and Omarchy fully isolated and keeps LUKS on the table.
+  # and Omarky fully isolated and keeps LUKS on the table.
   step "Checking existing EFI partitions on $disk"
   local detected_win_esp
   detected_win_esp=$(detect_windows_esp || true)
   if [[ -n "$detected_win_esp" ]]; then
     say "Found a Windows ESP at $detected_win_esp — leaving it untouched."
-    say "Omarchy will create its own dedicated EFI partition in free space."
+    say "Omarky will create its own dedicated EFI partition in free space."
   else
     say "A new EFI partition will be created in free space."
   fi
@@ -647,7 +647,7 @@ run_partition_decide() {
   local mib=$((1024 * 1024)) gib=$((1024 * 1024 * 1024))
   local ALIGN=$mib
   local EFI_SIZE_B=$((2 * gib))
-  local MIN_INSTALL_B=$((32 * gib))    # Minimum total Omarchy allocation
+  local MIN_INSTALL_B=$((32 * gib))    # Minimum total Omarky allocation
 
   EFI_START_B=$(( (FREE_START_B + ALIGN - 1) / ALIGN * ALIGN ))
   EFI_END_B=$((EFI_START_B + EFI_SIZE_B))
@@ -667,14 +667,14 @@ run_partition_decide() {
   fi
 
   # Default to encrypted and hide the unencrypted path behind Ctrl+C,
-  # matching the full-disk flow. The dedicated Omarchy ESP always supports
+  # matching the full-disk flow. The dedicated Omarky ESP always supports
   # LUKS, so encryption is always on the table here.
   local mode="encrypted" affirmative confirm_status
 
   while true; do
     clear_logo
     echo
-    say "Install Omarchy in the $(to_gb $INSTALL_MAX_B) of free space."
+    say "Install Omarky in the $(to_gb $INSTALL_MAX_B) of free space."
 
     case $mode in
       encrypted)
@@ -917,7 +917,7 @@ _EOF_
 }
 
 disk_form() {
-  step "Let's select where to install Omarchy..."
+  step "Let's select where to install Omarky..."
 
   # Don't offer the install media as an option (Arch ISO mounts it here)
   local boot_source
@@ -951,8 +951,8 @@ disk_form() {
 
 open_partition_tool() {
   step "Partition tool for $disk"
-  gum style "Create unallocated free space for Omarchy, then write changes and quit."
-  gum style --foreground 8 "Do not create an Omarchy partition here — leave the target area as Free space."
+  gum style "Create unallocated free space for Omarky, then write changes and quit."
+  gum style --foreground 8 "Do not create an Omarky partition here — leave the target area as Free space."
   gum style --foreground 8 "Tip: free-space install needs at least 32GB unallocated, plus 2GB more if no ESP already exists."
   echo
   gum confirm --affirmative "Open cfdisk" --negative "Back" "Open partition tool for $disk?" || return 0
@@ -997,7 +997,7 @@ install_mode_form() {
   fi
   choices+=("Choose a different disk")
 
-  step "Let's select how to install Omarchy..."
+  step "Let's select how to install Omarky..."
   install_mode=$(gum choose --header "Select installation mode on $disk" "${choices[@]}") || abort
 }
 
@@ -1120,7 +1120,7 @@ if $defer_provisioning; then
   email_address=""
   # Neutral defaults for the install; the owner overwrites both in the
   # first-boot OOBE (omarchy-provision-owner).
-  hostname="omarchy"
+  hostname="omarky"
   timezone="UTC"
 
   # Jump straight to disk selection + overwrite confirmation (encrypted by
