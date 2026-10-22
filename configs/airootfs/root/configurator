@@ -122,7 +122,7 @@ greeter() {
   printf '\033[%d;1H' "$logo_row"
   gum style --foreground 2 --padding "0 0 0 $PADDING_LEFT" "$(<"$LOGO_PATH")"
 
-  tagline="Beautiful, Fun & Agentic Linux by DHH"
+  tagline="A private, personal Linux — yours."
   tpad=$(((cols - ${#tagline}) / 2)); (( tpad < 0 )) && tpad=0
   printf '\033[%d;%dH%s' "$tagline_row" "$((tpad + 1))" "$tagline"
 
@@ -842,7 +842,22 @@ run_partition_execute() {
       mount -o noatime,compress=zstd,subvol=@pkg "$root_mapper" /mnt/var/cache/pacman/pkg
 
     disk_step "creating the ESP filesystem on $efi_dev" mkfs.fat -F32 -n OMARCHY_EFI "$efi_dev"
-    disk_step "mounting the ESP" mount "$efi_dev" /mnt"$esp_mount_in_target"
+    # Let udev finish with the freshly formatted partition before mounting it,
+    # and retry briefly: a one-off "Can't find a SQUASHFS superblock" (every
+    # filesystem type tried and refused) was seen here once on a reused
+    # partition number, then never again on an identical replay.
+    udevadm settle 2>/dev/null || true
+    esp_mounted=false
+    for _attempt in 1 2 3 4 5; do
+      if mount "$efi_dev" /mnt"$esp_mount_in_target" 2>&1; then
+        esp_mounted=true
+        break
+      fi
+      sleep 1
+      udevadm settle 2>/dev/null || true
+      partprobe "$disk" 2>/dev/null || true
+    done
+    $esp_mounted || disk_abort_hook "Could not mount the ESP $efi_dev at /mnt$esp_mount_in_target"
 
     # The orchestrator's first act is to verify this handoff. Check it here so
     # a failure names the step that broke rather than surfacing later as
@@ -996,7 +1011,7 @@ requires_full_disk_install() {
 show_partition_table() {
   echo
   gum style --foreground 8 "What is on $disk:"
-  lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTTYPENAME "$disk" 2>/dev/null | sed 's/^/  /'
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTTYPENAME "$disk" 2>/dev/null | gum style --foreground 7
   echo
 }
 
