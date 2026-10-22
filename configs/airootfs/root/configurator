@@ -608,7 +608,11 @@ run_partition_decide() {
   local FREE_SPACE_INFO pt_type disk_size_b
   needs_mklabel=false
   pt_type=$(lsblk -dno PTTYPE "$disk" 2>/dev/null)
-  if [[ -z "$pt_type" ]]; then
+  if [[ -n ${replace_part_num:-} ]]; then
+    # Replacing one partition: the region is exactly that partition's extents,
+    # whatever free space lies elsewhere on the disk.
+    FREE_SPACE_INFO="$replace_start_b $replace_end_b $replace_size_b"
+  elif [[ -z "$pt_type" ]]; then
     disk_size_b=$(lsblk -bdno SIZE "$disk" 2>/dev/null)
     if [[ -n "$disk_size_b" && "$disk_size_b" -gt 0 ]]; then
       local _mib=$((1024 * 1024))
@@ -674,7 +678,12 @@ run_partition_decide() {
   while true; do
     clear_logo
     echo
-    say "Install Omarky in the $(to_gb $INSTALL_MAX_B) of free space."
+    if [[ -n ${replace_part_num:-} ]]; then
+      say "Replace $replace_part_dev with Omarky ($(to_gb $INSTALL_MAX_B) usable)."
+      say --foreground 8 "That partition is erased; the rest of $disk is untouched."
+    else
+      say "Install Omarky in the $(to_gb $INSTALL_MAX_B) of free space."
+    fi
 
     case $mode in
       encrypted)
@@ -742,11 +751,19 @@ run_partition_execute() {
 
   if $dry; then
     $needs_mklabel && say "[dry] would initialize GPT on $disk"
+    [[ -n ${replace_part_num:-} ]] && say "[dry] would delete partition $replace_part_num ($replace_part_dev) first"
     say "[dry] would create an EFI partition and a root partition in the free region"
     say "[dry] partition numbers are assigned by parted at creation, then read back"
     say "[dry] encrypted=$encrypt_installation kernel=$kernel_choice"
   else
     step "Creating partitions on $disk"
+    if [[ -n ${replace_part_num:-} ]]; then
+      disk_step "deleting partition $replace_part_num ($replace_part_dev) on $disk" \
+        parted --script "$disk" rm "$replace_part_num"
+      partprobe "$disk" 2>/dev/null || true
+      udevadm settle 2>/dev/null || true
+      sleep 1
+    fi
     if $needs_mklabel; then
       disk_step "initializing GPT on $disk" parted --script "$disk" mklabel gpt
       partprobe "$disk" 2>/dev/null || true
@@ -964,27 +981,87 @@ open_partition_tool() {
   sleep 1
 }
 
-# If the disk has no partition table or no unallocated free space, the only
-# viable paths write the whole disk, so the free-space mode is not offered.
+# A disk with no partition table has nothing to preserve, so the only viable
+# path writes the whole disk. A disk that has partitions always gets the full
+# picker, even with no unallocated space: free-space mode then offers the
+# partition tool to make some, and "Replace one partition" needs none.
 requires_full_disk_install() {
-  local pt_type free_space_b
+  local pt_type
   pt_type=$(lsblk -dno PTTYPE "$disk" 2>/dev/null)
+  [[ -z "$pt_type" ]]
+}
 
-  # a) No partition table: disk is empty
-  [[ -z "$pt_type" ]] && return 0
+# Show what is on the disk before asking how to install, so nobody has to
+# remember which drive was which.
+show_partition_table() {
+  echo
+  gum style --foreground 8 "What is on $disk:"
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTTYPENAME "$disk" 2>/dev/null | sed 's/^/  /'
+  echo
+}
 
-  # b) No usable free space
-  free_space_b=$(parted -ms "$disk" unit B print free </dev/null 2>/dev/null | \
-    awk -F: '
-      $NF ~ /free/ {
-        size=$4;
-        gsub(/B/, "", size);
-        if (size+0 > max+0) max=size;
-      }
-      END {
-        print max+0;
-      }')
-  [[ -z "$free_space_b" || "$free_space_b" -eq 0 ]]
+# Pick one existing partition to replace. Everything else on the disk is left
+# alone. Nothing is written here; the partition is only deleted by
+# run_partition_execute, after the user step and the final confirmation.
+# Sets replace_part_num/dev/start_b/end_b/size_b; returns 1 to go back.
+replace_partition_form() {
+  replace_part_num=""
+  local min_b=$((32 * 1024 * 1024 * 1024))
+  local options=() small=0
+  local name num size fstype label ptname mounted line
+
+  while IFS='|' read -r name num size fstype label ptname mounted; do
+    [[ -n $name ]] || continue
+    [[ -n $mounted ]] && continue
+    if (( size < min_b )); then
+      small=$((small + 1))
+      continue
+    fi
+    line="$name  $(to_gb "$size")  ${fstype:-no filesystem}"
+    [[ -n $label ]] && line+="  \"$label\""
+    [[ -n $ptname ]] && line+="  ($ptname)"
+    options+=("$line")
+  done < <(lsblk -Jbpo NAME,PARTN,SIZE,FSTYPE,LABEL,PARTTYPENAME,MOUNTPOINTS "$disk" 2>/dev/null |
+    jq -r '.blockdevices[].children[]? | select(.partn != null) |
+      [.name, .partn, .size, (.fstype // ""), (.label // ""), (.parttypename // ""),
+       ((.mountpoints // []) | map(select(. != null)) | join(","))] | join("|")')
+
+  step "Replace one partition on $disk"
+  if (( ${#options[@]} == 0 )); then
+    say --foreground 1 "No partition on $disk is large enough: Omarky needs a partition of at least 32GB."
+    (( small > 0 )) && say "$small smaller partition(s) were skipped."
+    say "Use Free space install and the partition tool to merge or resize partitions first."
+    echo
+    gum confirm --affirmative "Back" --negative "Back" "Return to installation mode?" || true
+    return 1
+  fi
+
+  say "Only the partition you pick is erased. Every other partition on $disk is left untouched."
+  (( small > 0 )) && say --foreground 8 "$small partition(s) under 32GB are not listed."
+  echo
+  local choice
+  choice=$(gum choose --header "Select the partition to replace with Omarky" "${options[@]}" "Back") || abort
+  [[ $choice == "Back" ]] && return 1
+
+  replace_part_dev=${choice%% *}
+  replace_part_num=$(lsblk -dno PARTN "$replace_part_dev" 2>/dev/null)
+  local extents
+  extents=$(parted -ms "$disk" unit B print </dev/null 2>/dev/null |
+    awk -F: -v n="$replace_part_num" '$1==n { gsub(/B/,"",$2); gsub(/B/,"",$3); gsub(/B/,"",$4); print $2, $3, $4 }')
+  if [[ -z $replace_part_num || -z $extents ]]; then
+    replace_part_num=""
+    say --foreground 1 "Could not read the layout of $replace_part_dev."
+    return 1
+  fi
+  read -r replace_start_b replace_end_b replace_size_b <<<"$extents"
+
+  echo
+  say --foreground 1 "$choice"
+  if ! gum confirm --default=false --affirmative "Erase it and continue" --negative "No, go back" \
+    "Erase ${replace_part_dev} and install Omarky there? Nothing is written yet."; then
+    replace_part_num=""
+    return 1
+  fi
 }
 
 install_mode_form() {
@@ -994,11 +1071,13 @@ install_mode_form() {
   # Full-disk installs still support BIOS through the orchestrator's BIOS branch.
   if [[ -d /sys/firmware/efi ]] && ! $full_disk_only; then
     choices+=("Free space install (alongside existing data)")
+    choices+=("Replace one partition (keep the rest of the disk)")
   fi
   choices+=("Choose a different disk")
 
   step "Let's select how to install Omarky..."
-  install_mode=$(gum choose --header "Select installation mode on $disk" "${choices[@]}") || abort
+  show_partition_table
+  install_mode=$(gum choose --header "Select installation mode on $disk (Full disk install erases everything on it)" "${choices[@]}") || abort
 }
 
 confirm_disk_overwrite() {
@@ -1062,6 +1141,7 @@ select_installation() {
       install_mode_form
     fi
 
+    replace_part_num=""
     case "$install_mode" in
       "Full disk install")
         if confirm_disk_overwrite; then
@@ -1077,6 +1157,13 @@ select_installation() {
           install_target="free_space"
           return 0
         fi
+        ;;
+      "Replace one partition"*)
+        if replace_partition_form && run_partition_decide; then
+          install_target="free_space"
+          return 0
+        fi
+        replace_part_num=""
         ;;
       "Choose a different disk")
         disk_form
