@@ -36,12 +36,14 @@ if [[ -f /usr/share/omarchy-iso/install-debug ]]; then
 fi
 
 # Morganite palette (Omarky's default theme) so the live VT matches the installed look.
+# The installer draws its brand colour with index 2 and its accent with 6, so
+# those two carry Morganite's pink and its mint glint (not green and cyan).
 set_morganite_colors() {
-  echo -en "\e]P00f0c10"; echo -en "\e]P1ec6f8e"; echo -en "\e]P278d6a0"
+  echo -en "\e]P00f0c10"; echo -en "\e]P1ec6f8e"; echo -en "\e]P2f08fbd"
   echo -en "\e]P3f3c79a"; echo -en "\e]P4f08fbd"; echo -en "\e]P5d68ee8"
-  echo -en "\e]P69ad8d2"; echo -en "\e]P7bcacb6"; echo -en "\e]P84d3f49"
-  echo -en "\e]P9ff8fab"; echo -en "\e]PA9eebbd"; echo -en "\e]PBffdcb5"
-  echo -en "\e]PCffb3d6"; echo -en "\e]PDeab0f6"; echo -en "\e]PEbdeee9"
+  echo -en "\e]P678d6a0"; echo -en "\e]P7bcacb6"; echo -en "\e]P84d3f49"
+  echo -en "\e]P9ff8fab"; echo -en "\e]PAffb3d6"; echo -en "\e]PBffdcb5"
+  echo -en "\e]PCffb3d6"; echo -en "\e]PDeab0f6"; echo -en "\e]PE9eebbd"
   echo -en "\e]PFede5eb"
   echo -en "\033[0m"
   clear
